@@ -1,0 +1,173 @@
+"""
+Индексатор базы знаний Фармбазис.
+
+Парсит HTML-инструкции, разбивает на чанки,
+создаёт эмбеддинги и записывает в ChromaDB.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_chroma import Chroma
+from langchain_core.documents import Document
+from langchain_openai import OpenAIEmbeddings
+
+from app.config import settings
+from app.parser.html_parser import InstructionParser, ParsedInstruction
+
+logger = logging.getLogger(__name__)
+
+# Название коллекции в ChromaDB
+COLLECTION_NAME = "farmbazis_instructions"
+
+
+class KnowledgeBaseIndexer:
+    """Индексатор базы знаний на основе ChromaDB."""
+
+    def __init__(self):
+        self.embeddings = OpenAIEmbeddings(
+            model=settings.openai_embedding_model,
+            openai_api_key=settings.openai_api_key,
+        )
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=settings.rag_chunk_size,
+            chunk_overlap=settings.rag_chunk_overlap,
+            length_function=len,
+            separators=["\n\n", "\n", ". ", ", ", " ", ""],
+        )
+        self.parser = InstructionParser(
+            images_dir=Path(settings.chroma_persist_dir).parent / "images"
+        )
+        self.vector_store: Optional[Chroma] = None
+
+    def _instruction_to_documents(
+        self, instruction: ParsedInstruction
+    ) -> List[Document]:
+        """Конвертация ParsedInstruction в список LangChain Document."""
+        documents = []
+
+        # Формируем метаданные
+        metadata_base: Dict = {
+            "article_id": instruction.article_id,
+            "title": instruction.title,
+            "source_file": instruction.source_file,
+            "has_images": len(instruction.images) > 0,
+            "image_count": len(instruction.images),
+        }
+
+        # Добавляем YouTube ссылки
+        if instruction.youtube_links:
+            metadata_base["youtube_links"] = json.dumps(instruction.youtube_links)
+
+        # Добавляем информацию об изображениях
+        if instruction.images:
+            image_info = [
+                {"filename": img.filename, "alt": img.alt_text}
+                for img in instruction.images
+            ]
+            metadata_base["images_info"] = json.dumps(image_info, ensure_ascii=False)
+
+        # Формируем обогащённый текст для индексации
+        enriched_text = f"# {instruction.title}\n\n"
+        enriched_text += instruction.text_content
+
+        if instruction.youtube_links:
+            enriched_text += "\n\nВидео-инструкции:\n"
+            for link in instruction.youtube_links:
+                enriched_text += f"- {link}\n"
+
+        # Разбиваем на чанки
+        chunks = self.text_splitter.split_text(enriched_text)
+
+        for chunk_idx, chunk in enumerate(chunks):
+            metadata = {
+                **metadata_base,
+                "chunk_index": chunk_idx,
+                "total_chunks": len(chunks),
+            }
+            documents.append(
+                Document(page_content=chunk, metadata=metadata)
+            )
+
+        return documents
+
+    def index_instructions(self, instructions_dir: Optional[Path] = None) -> int:
+        """
+        Полная индексация всех инструкций.
+
+        Returns:
+            Количество проиндексированных документов (чанков).
+        """
+        instructions_dir = instructions_dir or settings.instructions_path
+        logger.info(f"Начало индексации из {instructions_dir}")
+
+        # Парсим все HTML-файлы
+        instructions = self.parser.parse_directory(instructions_dir)
+        logger.info(f"Распарсено {len(instructions)} инструкций")
+
+        # Конвертируем в документы
+        all_documents: List[Document] = []
+        for instruction in instructions:
+            docs = self._instruction_to_documents(instruction)
+            all_documents.extend(docs)
+
+        logger.info(f"Создано {len(all_documents)} чанков для индексации")
+
+        # Создаём/пересоздаём ChromaDB коллекцию
+        persist_dir = settings.chroma_persist_dir
+        Path(persist_dir).mkdir(parents=True, exist_ok=True)
+
+        self.vector_store = Chroma.from_documents(
+            documents=all_documents,
+            embedding=self.embeddings,
+            collection_name=COLLECTION_NAME,
+            persist_directory=persist_dir,
+        )
+
+        logger.info(
+            f"Индексация завершена. "
+            f"Записано {len(all_documents)} чанков в ChromaDB ({persist_dir})"
+        )
+
+        # Сохраняем статистику
+        stats = {
+            "total_instructions": len(instructions),
+            "total_chunks": len(all_documents),
+            "instructions_with_images": sum(
+                1 for i in instructions if i.images
+            ),
+            "instructions_with_youtube": sum(
+                1 for i in instructions if i.youtube_links
+            ),
+        }
+        stats_path = Path(persist_dir).parent / "indexing_stats.json"
+        stats_path.write_text(json.dumps(stats, indent=2, ensure_ascii=False))
+        logger.info(f"Статистика сохранена: {stats}")
+
+        return len(all_documents)
+
+    def get_vector_store(self) -> Chroma:
+        """Получение экземпляра векторного хранилища."""
+        if self.vector_store is None:
+            self.vector_store = Chroma(
+                collection_name=COLLECTION_NAME,
+                embedding_function=self.embeddings,
+                persist_directory=settings.chroma_persist_dir,
+            )
+        return self.vector_store
+
+
+# Singleton-экземпляр индексатора
+_indexer: Optional[KnowledgeBaseIndexer] = None
+
+
+def get_indexer() -> KnowledgeBaseIndexer:
+    global _indexer
+    if _indexer is None:
+        _indexer = KnowledgeBaseIndexer()
+    return _indexer
