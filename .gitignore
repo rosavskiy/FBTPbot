@@ -32,6 +32,9 @@ analyze.py
 analyze_yt.py
 yt_results.txt
 
+# Deploy scripts with credentials (sensitive)
+remote_*.py
+
 # Instructions (520MB+ с base64 картинками — переносятся отдельно через scp/rsync)
 instructions/
 
