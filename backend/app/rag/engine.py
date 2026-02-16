@@ -87,9 +87,17 @@ class RAGEngine:
         """Поиск релевантных документов."""
         top_k = top_k or settings.rag_top_k
 
+        logger.info(f"[DEMO] SEARCH_START|query={query}|top_k={top_k}")
+
         results = self.vector_store.similarity_search_with_relevance_scores(
             query, k=top_k
         )
+
+        # Логируем все найденные чанки с оценками
+        for doc, score in results:
+            article_id = doc.metadata.get('article_id', '?')
+            title = doc.metadata.get('title', 'Без названия')[:60]
+            logger.info(f"[DEMO] CHUNK|score={score:.3f}|article={article_id}|title={title}")
 
         # Фильтруем по минимальному порогу релевантности
         filtered = [
@@ -98,8 +106,7 @@ class RAGEngine:
         ]
 
         logger.info(
-            f"Поиск по '{query[:50]}...': найдено {len(results)} результатов, "
-            f"после фильтрации: {len(filtered)}"
+            f"[DEMO] SEARCH_DONE|found={len(results)}|passed_filter={len(filtered)}|threshold={settings.rag_confidence_threshold}"
         )
 
         return [doc for doc, _ in filtered]
@@ -196,10 +203,16 @@ class RAGEngine:
         Returns:
             RAGResponse с ответом и метаданными.
         """
+        import time as _time
+        _start = _time.time()
+
+        logger.info(f"[DEMO] REQUEST|question={question}")
+
         # 1. Retrieval — поиск релевантных документов
         documents = self.retrieve(question)
 
         if not documents:
+            logger.info(f"[DEMO] DECISION|confidence=0.0|escalation=True|reason=No documents found")
             return RAGResponse(
                 answer=(
                     "К сожалению, я не нашёл подходящей информации в базе знаний "
@@ -215,6 +228,7 @@ class RAGEngine:
         context_text, article_ids, youtube_links, images = self._build_context(
             documents
         )
+        logger.info(f"[DEMO] CONTEXT|articles={article_ids}|youtube={len(youtube_links)}|images={len(images)}")
 
         # 3. Формируем сообщения для LLM
         messages = [
@@ -237,6 +251,8 @@ class RAGEngine:
         messages.append({"role": "user", "content": user_message})
 
         # 4. Генерация ответа
+        logger.info(f"[DEMO] GPT_CALL|model={settings.openai_model}|messages={len(messages)}|temperature=0.1")
+        _gpt_start = _time.time()
         try:
             response = self.client.chat.completions.create(
                 model=settings.openai_model,
@@ -245,6 +261,10 @@ class RAGEngine:
                 max_tokens=2000,
             )
             raw_answer = response.choices[0].message.content or ""
+            _gpt_elapsed = _time.time() - _gpt_start
+            _tokens_in = response.usage.prompt_tokens if response.usage else 0
+            _tokens_out = response.usage.completion_tokens if response.usage else 0
+            logger.info(f"[DEMO] GPT_DONE|time={_gpt_elapsed:.1f}s|tokens_in={_tokens_in}|tokens_out={_tokens_out}")
         except Exception as e:
             logger.error(f"Ошибка OpenAI API: {e}")
             return RAGResponse(
@@ -262,6 +282,10 @@ class RAGEngine:
 
         # 6. Определяем необходимость эскалации
         needs_escalation = confidence < settings.rag_confidence_threshold
+        _total = _time.time() - _start
+
+        logger.info(f"[DEMO] DECISION|confidence={confidence}|escalation={needs_escalation}|reason={reason}")
+        logger.info(f"[DEMO] COMPLETE|total_time={_total:.1f}s|answer_len={len(clean_answer)}")
 
         return RAGResponse(
             answer=clean_answer,
