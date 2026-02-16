@@ -12,9 +12,9 @@ set -e
 
 # === НАСТРОЙКИ ===
 SERVER_USER="root"
-SERVER_HOST="YOUR_SERVER_IP"
+SERVER_HOST="192.144.59.97"
 SERVER_DIR="/opt/fbtpai"
-REPO_URL="YOUR_GIT_REPO_URL"  # например: git@github.com:yourname/fbtpai.git
+REPO_URL="https://github.com/rosavskiy/FBTPbot.git"
 INSTRUCTIONS_LOCAL="./instructions"
 
 # === ЦВЕТА ===
@@ -66,7 +66,7 @@ deploy_code() {
 
         if [ -d "${SERVER_DIR}" ]; then
             cd ${SERVER_DIR}
-            git pull origin master
+            git pull origin main
             echo "✅ Код обновлён"
         else
             git clone ${REPO_URL} ${SERVER_DIR}
