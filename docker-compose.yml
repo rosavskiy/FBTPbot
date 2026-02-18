@@ -12,6 +12,20 @@ services:
       - ./instructions:/app/instructions:ro
     restart: unless-stopped
 
+  tg-bot:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/data:/app/data
+      - ./instructions:/app/instructions:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.tg.bot"]
+
   frontend:
     build:
       context: ./frontend

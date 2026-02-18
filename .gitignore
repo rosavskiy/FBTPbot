@@ -34,13 +34,21 @@ yt_results.txt
 
 # Deploy/utility scripts with credentials (sensitive)
 remote_*.py
-deploy_stockholm*.py
-index_stockholm.py
-upload_stockholm.py
-rebuild_server.py
+deploy_*.py
+index_*.py
+upload_*.py
+rebuild_*.py
 demo_monitor.py
-test_demo_capture.py
-test_bot.py
+test_*.py
+check_*.py
+clean_*.py
+audit_*.py
+process_*.py
+ai_process_*.py
+prepare_*.py
+quick_*.py
+tickets_analysis.txt
+audit_results.txt
 
 # Real support data
 real_support/
