@@ -209,7 +209,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return
 
-    logger.info(f"[TG] User {user_id}: {text[:80]}")
+    # Информация о пользователе для логов
+    user = update.effective_user
+    username = user.username or user.first_name or str(user_id)
+    logger.info(f"[DEMO] REQUEST|question={text[:120]}|source=telegram|user={username}")
 
     # Показываем «печатает...»
     await update.message.chat.send_action(ChatAction.TYPING)
@@ -277,6 +280,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for t in classification.suggested_topics
         ]
 
+        logger.info(f"[DEMO] CLARIFICATION_NEEDED|topics={len(topics_dicts)}|source=telegram|user={username}")
+
         # Сохраняем контекст для обработки выбора
         await save_clarification_context(
             session_id=sid,
@@ -309,6 +314,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         needs_escalation=rag_response.needs_escalation,
     )
     _add_to_history(user_id, "assistant", rag_response.answer)
+
+    logger.info(
+        f"[DEMO] COMPLETE|total_time=n/a|answer_len={len(rag_response.answer)}"
+        f"|source=telegram|user={username}"
+    )
 
     await update.message.reply_text(reply, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
@@ -364,7 +374,7 @@ async def handle_topic_callback(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception:
         pass
 
-    logger.info(f"[TG] User {user_id} selected topic #{idx + 1}: {topic.get('title', '?')}")
+    logger.info(f"[DEMO] ASK_BY_TOPIC|article={topic.get('article_id', '?')}|title={topic.get('title', '?')}|source=telegram|user_id={user_id}")
 
     # Запрос к RAG
     rag = get_rag_engine()
