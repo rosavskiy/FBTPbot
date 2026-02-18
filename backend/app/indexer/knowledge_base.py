@@ -22,8 +22,9 @@ from app.parser.html_parser import InstructionParser, ParsedInstruction
 
 logger = logging.getLogger(__name__)
 
-# Название коллекции в ChromaDB
+# Названия коллекций в ChromaDB
 COLLECTION_NAME = "farmbazis_instructions"
+SUPPORT_COLLECTION_NAME = "support_tickets"
 
 
 class KnowledgeBaseIndexer:
@@ -44,6 +45,7 @@ class KnowledgeBaseIndexer:
             images_dir=Path(settings.chroma_persist_dir).parent / "images"
         )
         self.vector_store: Optional[Chroma] = None
+        self.support_vector_store: Optional[Chroma] = None
 
     def _instruction_to_documents(
         self, instruction: ParsedInstruction
@@ -151,8 +153,82 @@ class KnowledgeBaseIndexer:
 
         return len(all_documents)
 
+    def index_support_tickets(self, json_path: Path) -> int:
+        """
+        Индексация реальных заявок техподдержки из JSON.
+
+        Args:
+            json_path: Путь к support_qa_documents.json
+
+        Returns:
+            Количество проиндексированных документов.
+        """
+        import json as _json
+
+        logger.info(f"Начало индексации заявок ТП из {json_path}")
+
+        with open(json_path, 'r', encoding='utf-8') as f:
+            qa_docs = _json.load(f)
+
+        logger.info(f"Загружено {len(qa_docs)} Q&A документов")
+
+        # Конвертируем в LangChain Document
+        documents: List[Document] = []
+        for item in qa_docs:
+            metadata = item.get('metadata', {})
+            # ChromaDB не поддерживает списки в metadata — сериализуем
+            clean_meta = {
+                'source': metadata.get('source', 'real_support_tickets'),
+                'category': metadata.get('category', 'Прочее'),
+                'category_en': metadata.get('category_en', 'general'),
+                'quality_score': metadata.get('quality_score', 0),
+                'question': metadata.get('question', '')[:500],
+                'doc_type': metadata.get('type', 'qa_pair'),
+                'article_id': f"tp_{item.get('id', 'unknown')}",
+                'title': metadata.get('question', 'Заявка ТП')[:200],
+            }
+            if metadata.get('tags'):
+                clean_meta['tags'] = ', '.join(metadata['tags'])
+
+            documents.append(
+                Document(page_content=item['text'], metadata=clean_meta)
+            )
+
+        # Создаём коллекцию support_tickets
+        persist_dir = settings.chroma_persist_dir
+        Path(persist_dir).mkdir(parents=True, exist_ok=True)
+
+        self.support_vector_store = Chroma.from_documents(
+            documents=documents,
+            embedding=self.embeddings,
+            collection_name=SUPPORT_COLLECTION_NAME,
+            persist_directory=persist_dir,
+        )
+
+        logger.info(
+            f"Индексация заявок ТП завершена. "
+            f"Записано {len(documents)} документов в коллекцию '{SUPPORT_COLLECTION_NAME}'"
+        )
+
+        # Сохраняем статистику
+        cats = {}
+        for item in qa_docs:
+            cat = item.get('metadata', {}).get('category', 'Прочее')
+            cats[cat] = cats.get(cat, 0) + 1
+
+        stats = {
+            'total_documents': len(documents),
+            'categories': cats,
+            'collection_name': SUPPORT_COLLECTION_NAME,
+        }
+        stats_path = Path(persist_dir).parent / "support_indexing_stats.json"
+        stats_path.write_text(_json.dumps(stats, indent=2, ensure_ascii=False))
+        logger.info(f"Статистика заявок ТП: {stats}")
+
+        return len(documents)
+
     def get_vector_store(self) -> Chroma:
-        """Получение экземпляра векторного хранилища."""
+        """Получение векторного хранилища основной коллекции (инструкции)."""
         if self.vector_store is None:
             self.vector_store = Chroma(
                 collection_name=COLLECTION_NAME,
@@ -160,6 +236,29 @@ class KnowledgeBaseIndexer:
                 persist_directory=settings.chroma_persist_dir,
             )
         return self.vector_store
+
+
+    def get_support_vector_store(self) -> Optional[Chroma]:
+        """Получение векторного хранилища коллекции заявок ТП."""
+        if not hasattr(self, 'support_vector_store') or self.support_vector_store is None:
+            try:
+                store = Chroma(
+                    collection_name=SUPPORT_COLLECTION_NAME,
+                    embedding_function=self.embeddings,
+                    persist_directory=settings.chroma_persist_dir,
+                )
+                # Проверяем, что коллекция реально существует и не пуста
+                count = store._collection.count()
+                if count > 0:
+                    self.support_vector_store = store
+                    logger.info(f"Загружена коллекция '{SUPPORT_COLLECTION_NAME}': {count} документов")
+                else:
+                    self.support_vector_store = None
+                    logger.info(f"Коллекция '{SUPPORT_COLLECTION_NAME}' пуста — пропускаем")
+            except Exception as e:
+                logger.warning(f"Коллекция '{SUPPORT_COLLECTION_NAME}' не найдена: {e}")
+                self.support_vector_store = None
+        return self.support_vector_store
 
 
 # Singleton-экземпляр индексатора

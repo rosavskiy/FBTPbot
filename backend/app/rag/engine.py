@@ -20,7 +20,7 @@ from langchain_core.documents import Document
 from openai import OpenAI
 
 from app.config import settings
-from app.indexer.knowledge_base import get_indexer
+from app.indexer.knowledge_base import get_indexer, SUPPORT_COLLECTION_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -83,30 +83,59 @@ class RAGEngine:
             self._vector_store = get_indexer().get_vector_store()
         return self._vector_store
 
+    @property
+    def support_vector_store(self):
+        """Векторное хранилище заявок ТП (может быть None)."""
+        if not hasattr(self, '_support_vector_store'):
+            self._support_vector_store = get_indexer().get_support_vector_store()
+        return self._support_vector_store
+
     def retrieve(self, query: str, top_k: int = None) -> List[Document]:
-        """Поиск релевантных документов."""
+        """Поиск релевантных документов в обеих коллекциях."""
         top_k = top_k or settings.rag_top_k
 
         logger.info(f"[DEMO] SEARCH_START|query={query}|top_k={top_k}")
 
+        # Поиск в основной коллекции (инструкции)
         results = self.vector_store.similarity_search_with_relevance_scores(
             query, k=top_k
         )
 
-        # Логируем все найденные чанки с оценками
         for doc, score in results:
             article_id = doc.metadata.get('article_id', '?')
             title = doc.metadata.get('title', 'Без названия')[:60]
-            logger.info(f"[DEMO] CHUNK|score={score:.3f}|article={article_id}|title={title}")
+            logger.info(f"[DEMO] CHUNK|score={score:.3f}|article={article_id}|title={title}|col=instructions")
+
+        # Поиск во второй коллекции (заявки ТП)
+        support_results = []
+        if self.support_vector_store is not None:
+            try:
+                support_results = self.support_vector_store.similarity_search_with_relevance_scores(
+                    query, k=top_k
+                )
+                for doc, score in support_results:
+                    article_id = doc.metadata.get('article_id', '?')
+                    title = doc.metadata.get('title', 'Заявка ТП')[:60]
+                    logger.info(f"[DEMO] CHUNK|score={score:.3f}|article={article_id}|title={title}|col=support")
+            except Exception as e:
+                logger.warning(f"Ошибка поиска в коллекции support_tickets: {e}")
+
+        # Объединяем и сортируем по score (лучшие сверху)
+        all_results = results + support_results
+        all_results.sort(key=lambda x: x[1], reverse=True)
+
+        # Берём top_k лучших из объединённых результатов
+        top_results = all_results[:top_k]
 
         # Фильтруем по минимальному порогу релевантности
         filtered = [
-            (doc, score) for doc, score in results
+            (doc, score) for doc, score in top_results
             if score >= settings.rag_confidence_threshold
         ]
 
+        total_found = len(results) + len(support_results)
         logger.info(
-            f"[DEMO] SEARCH_DONE|found={len(results)}|passed_filter={len(filtered)}|threshold={settings.rag_confidence_threshold}"
+            f"[DEMO] SEARCH_DONE|found={total_found}|merged_top={len(top_results)}|passed_filter={len(filtered)}|threshold={settings.rag_confidence_threshold}"
         )
 
         return [doc for doc, _ in filtered]

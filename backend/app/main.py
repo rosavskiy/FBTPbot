@@ -102,10 +102,18 @@ async def health_check():
     if kb_ready:
         stats = json.loads(stats_path.read_text())
 
+    # Статистика заявок ТП
+    support_stats_path = Path(settings.chroma_persist_dir).parent / "support_indexing_stats.json"
+    support_count = 0
+    if support_stats_path.exists():
+        support_stats = json.loads(support_stats_path.read_text())
+        support_count = support_stats.get("total_documents", 0)
+
     return HealthResponse(
         status="ok",
         version="1.0.0",
         knowledge_base_ready=kb_ready,
         total_articles=stats.get("total_instructions", 0),
         total_chunks=stats.get("total_chunks", 0),
+        support_tickets_count=support_count,
     )

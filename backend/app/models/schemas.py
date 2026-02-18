@@ -112,3 +112,4 @@ class HealthResponse(BaseModel):
     knowledge_base_ready: bool = False
     total_articles: int = 0
     total_chunks: int = 0
+    support_tickets_count: int = 0
