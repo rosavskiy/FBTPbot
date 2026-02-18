@@ -4,6 +4,13 @@
 
 const API_BASE = '/api'
 
+export interface SuggestedTopic {
+  title: string
+  article_id: string
+  score: number
+  snippet: string
+}
+
 export interface ChatResponse {
   answer: string
   session_id: string
@@ -12,6 +19,8 @@ export interface ChatResponse {
   source_articles: string[]
   youtube_links: string[]
   has_images: boolean
+  response_type: 'answer' | 'clarification'
+  suggested_topics: SuggestedTopic[] | null
 }
 
 export interface EscalationResponse {

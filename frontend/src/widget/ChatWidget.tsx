@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { api, ChatResponse } from '../api/client'
+import { api, ChatResponse, SuggestedTopic } from '../api/client'
 import ReactMarkdown from 'react-markdown'
 import './ChatWidget.css'
 
@@ -8,6 +8,8 @@ interface Message {
   content: string
   youtubeLinks?: string[]
   needsEscalation?: boolean
+  suggestedTopics?: SuggestedTopic[]
+  responseType?: 'answer' | 'clarification'
 }
 
 export function ChatWidget() {
@@ -53,14 +55,16 @@ export function ChatWidget() {
         content: response.answer,
         youtubeLinks: response.youtube_links,
         needsEscalation: response.needs_escalation,
+        suggestedTopics: response.suggested_topics || undefined,
+        responseType: response.response_type,
       }
 
       setMessages(prev => [...prev, botMsg])
 
       if (!isOpen) setUnread(prev => prev + 1)
 
-      // Автоэскалация при низкой уверенности
-      if (response.needs_escalation && response.session_id) {
+      // Автоэскалация при низкой уверенности (не для уточняющих вопросов)
+      if (response.needs_escalation && response.session_id && response.response_type !== 'clarification') {
         setMessages(prev => [
           ...prev,
           {
@@ -94,6 +98,35 @@ export function ChatWidget() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage()
+    }
+  }
+
+  const handleTopicSelect = async (topicIndex: number) => {
+    if (loading) return
+    const text = String(topicIndex + 1)
+    setMessages(prev => [...prev, { role: 'user', content: text }])
+    setLoading(true)
+
+    try {
+      const response: ChatResponse = await api.sendMessage(text, sessionId || undefined)
+      if (!sessionId) setSessionId(response.session_id)
+
+      const botMsg: Message = {
+        role: 'assistant',
+        content: response.answer,
+        youtubeLinks: response.youtube_links,
+        needsEscalation: response.needs_escalation,
+        suggestedTopics: response.suggested_topics || undefined,
+        responseType: response.response_type,
+      }
+      setMessages(prev => [...prev, botMsg])
+    } catch {
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: 'Ошибка соединения. Попробуйте позже.' },
+      ])
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -131,7 +164,35 @@ export function ChatWidget() {
                     📹 Видео-инструкция
                   </a>
                 ))}
-                {msg.needsEscalation && (
+                {/* Кнопки выбора темы (уточнение) */}
+                {msg.responseType === 'clarification' && msg.suggestedTopics && msg.suggestedTopics.length > 0 && (
+                  <div className="widget-clarification">
+                    {msg.suggestedTopics.map((topic, j) => (
+                      <button
+                        key={j}
+                        className="widget-topic-btn"
+                        onClick={() => handleTopicSelect(j)}
+                        disabled={loading}
+                        title={topic.snippet}
+                      >
+                        {j + 1}. {topic.title}
+                      </button>
+                    ))}
+                    <button
+                      className="widget-topic-btn widget-topic-btn--other"
+                      onClick={() => {
+                        const input = document.querySelector<HTMLInputElement>('.widget-input input')
+                        if (input) {
+                          input.focus()
+                          input.placeholder = 'Опишите проблему подробнее...'
+                        }
+                      }}
+                    >
+                      🔍 Не в списке
+                    </button>
+                  </div>
+                )}
+                {msg.needsEscalation && msg.responseType !== 'clarification' && (
                   <button className="widget-escalation-btn" onClick={handleEscalation}>
                     📞 Связаться с оператором
                   </button>

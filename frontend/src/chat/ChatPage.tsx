@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { api, ChatResponse } from '../api/client'
+import { api, ChatResponse, SuggestedTopic } from '../api/client'
 import ReactMarkdown from 'react-markdown'
 import './ChatPage.css'
 
@@ -10,6 +10,8 @@ interface Message {
   needsEscalation?: boolean
   youtubeLinks?: string[]
   sourceArticles?: string[]
+  suggestedTopics?: SuggestedTopic[]
+  responseType?: 'answer' | 'clarification'
 }
 
 export function ChatPage() {
@@ -63,11 +65,13 @@ export function ChatPage() {
         needsEscalation: response.needs_escalation,
         youtubeLinks: response.youtube_links,
         sourceArticles: response.source_articles,
+        suggestedTopics: response.suggested_topics || undefined,
+        responseType: response.response_type,
       }
 
       setMessages(prev => [...prev, botMessage])
 
-      if (response.needs_escalation) {
+      if (response.needs_escalation && response.response_type !== 'clarification') {
         setShowEscalation(true)
       }
     } catch (err) {
@@ -131,6 +135,42 @@ export function ChatPage() {
     }
   }
 
+  const handleTopicSelect = async (topicIndex: number) => {
+    if (loading) return
+    const text = String(topicIndex + 1)
+    const userMessage: Message = { role: 'user', content: text }
+    setMessages(prev => [...prev, userMessage])
+    setLoading(true)
+
+    try {
+      const response: ChatResponse = await api.sendMessage(text, sessionId || undefined)
+      if (!sessionId) setSessionId(response.session_id)
+
+      const botMessage: Message = {
+        role: 'assistant',
+        content: response.answer,
+        confidence: response.confidence,
+        needsEscalation: response.needs_escalation,
+        youtubeLinks: response.youtube_links,
+        sourceArticles: response.source_articles,
+        responseType: response.response_type,
+        suggestedTopics: response.suggested_topics || undefined,
+      }
+      setMessages(prev => [...prev, botMessage])
+
+      if (response.needs_escalation && response.response_type !== 'clarification') {
+        setShowEscalation(true)
+      }
+    } catch {
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: 'Произошла ошибка при обработке запроса. Попробуйте ещё раз.' },
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="chat-page">
       <header className="chat-header">
@@ -161,6 +201,35 @@ export function ChatPage() {
                       {link}
                     </a>
                   ))}
+                </div>
+              )}
+
+              {/* Кнопки выбора темы (уточнение) */}
+              {msg.responseType === 'clarification' && msg.suggestedTopics && msg.suggestedTopics.length > 0 && (
+                <div className="chat-clarification">
+                  {msg.suggestedTopics.map((topic, j) => (
+                    <button
+                      key={j}
+                      className="chat-topic-btn"
+                      onClick={() => handleTopicSelect(j)}
+                      disabled={loading}
+                      title={topic.snippet}
+                    >
+                      {j + 1}. {topic.title}
+                    </button>
+                  ))}
+                  <button
+                    className="chat-topic-btn chat-topic-btn--other"
+                    onClick={() => {
+                      const input = document.querySelector<HTMLTextAreaElement>('.chat-input-area textarea')
+                      if (input) {
+                        input.focus()
+                        input.placeholder = 'Опишите проблему подробнее...'
+                      }
+                    }}
+                  >
+                    🔍 Моя проблема не в списке
+                  </button>
                 </div>
               )}
 

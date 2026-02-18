@@ -22,6 +22,13 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="ID сессии (для продолжения диалога)")
 
 
+class SuggestedTopicSchema(BaseModel):
+    title: str = Field(..., description="Название темы")
+    article_id: str = Field(..., description="ID статьи")
+    score: float = Field(0.0, description="Релевантность (0-1)")
+    snippet: str = Field("", description="Краткий фрагмент текста")
+
+
 class ChatResponse(BaseModel):
     answer: str = Field(..., description="Ответ бота")
     session_id: str = Field(..., description="ID сессии")
@@ -30,6 +37,10 @@ class ChatResponse(BaseModel):
     source_articles: List[str] = Field(default_factory=list, description="ID статей-источников")
     youtube_links: List[str] = Field(default_factory=list, description="YouTube ссылки")
     has_images: bool = Field(False, description="Есть ли скриншоты в источниках")
+    response_type: str = Field("answer", description="Тип ответа: answer | clarification")
+    suggested_topics: Optional[List[SuggestedTopicSchema]] = Field(
+        None, description="Предложенные темы для уточнения (при response_type=clarification)"
+    )
 
 
 # === Эскалация ===

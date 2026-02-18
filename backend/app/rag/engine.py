@@ -140,6 +140,74 @@ class RAGEngine:
 
         return [doc for doc, _ in filtered]
 
+    def retrieve_with_scores(self, query: str, top_k: int = None) -> List[Tuple[Document, float]]:
+        """
+        Поиск релевантных документов с возвратом score.
+
+        Аналогичен retrieve(), но возвращает пары (Document, score)
+        для использования в классификаторе запросов.
+        """
+        top_k = top_k or settings.rag_top_k
+
+        logger.info(f"[DEMO] SEARCH_WITH_SCORES|query={query}|top_k={top_k}")
+
+        results = self.vector_store.similarity_search_with_relevance_scores(
+            query, k=top_k
+        )
+
+        support_results = []
+        if self.support_vector_store is not None:
+            try:
+                support_results = self.support_vector_store.similarity_search_with_relevance_scores(
+                    query, k=top_k
+                )
+            except Exception as e:
+                logger.warning(f"Ошибка поиска в коллекции support_tickets: {e}")
+
+        all_results = results + support_results
+        all_results.sort(key=lambda x: x[1], reverse=True)
+        top_results = all_results[:top_k]
+
+        filtered = [
+            (doc, score) for doc, score in top_results
+            if score >= settings.rag_confidence_threshold
+        ]
+
+        return filtered
+
+    def retrieve_by_article_id(self, article_id: str, query: str, top_k: int = 3) -> List[Document]:
+        """
+        Поиск чанков конкретной статьи, наиболее релевантных запросу.
+
+        Используется когда пользователь выбрал тему из уточняющего списка.
+        """
+        # Ищем больше чанков, потом фильтруем по article_id
+        results = self.vector_store.similarity_search_with_relevance_scores(
+            query, k=20
+        )
+
+        matched = [
+            (doc, score) for doc, score in results
+            if str(doc.metadata.get("article_id", "")) == str(article_id)
+        ]
+
+        if not matched:
+            # Fallback: поиск по всем коллекциям
+            if self.support_vector_store is not None:
+                try:
+                    support_results = self.support_vector_store.similarity_search_with_relevance_scores(
+                        query, k=20
+                    )
+                    matched = [
+                        (doc, score) for doc, score in support_results
+                        if str(doc.metadata.get("article_id", "")) == str(article_id)
+                    ]
+                except Exception:
+                    pass
+
+        matched.sort(key=lambda x: x[1], reverse=True)
+        return [doc for doc, _ in matched[:top_k]]
+
     def _build_context(self, documents: List[Document]) -> Tuple[str, List[str], List[str], List[dict]]:
         """
         Формирование контекста из документов.
@@ -310,6 +378,157 @@ class RAGEngine:
         clean_answer, confidence, reason = self._parse_confidence(raw_answer)
 
         # 6. Определяем необходимость эскалации
+        needs_escalation = confidence < settings.rag_confidence_threshold
+        _total = _time.time() - _start
+
+        logger.info(f"[DEMO] DECISION|confidence={confidence}|escalation={needs_escalation}|reason={reason}")
+        logger.info(f"[DEMO] COMPLETE|total_time={_total:.1f}s|answer_len={len(clean_answer)}")
+
+        return RAGResponse(
+            answer=clean_answer,
+            confidence=confidence,
+            confidence_reason=reason,
+            needs_escalation=needs_escalation,
+            source_articles=article_ids,
+            youtube_links=youtube_links,
+            images=images,
+        )
+
+    async def ask_with_clarification(
+        self,
+        question: str,
+        chat_history: Optional[List[dict]] = None,
+    ) -> Tuple[Optional[RAGResponse], Optional["ClassificationResult"]]:
+        """
+        Расширенный метод ask с поддержкой уточняющих вопросов.
+
+        Сначала проверяет, достаточно ли конкретен запрос.
+        Если нет — возвращает (None, ClassificationResult) с темами.
+        Если да — возвращает (RAGResponse, None) как обычно.
+        """
+        from app.rag.query_classifier import classify_query
+
+        # 1. Поиск с оценками
+        scored_results = self.retrieve_with_scores(question)
+
+        # 2. Классификация
+        classification = classify_query(question, scored_results)
+
+        if not classification.is_complete:
+            logger.info(f"[DEMO] CLARIFICATION_NEEDED|topics={len(classification.suggested_topics)}")
+            return None, classification
+
+        # 3. Запрос достаточно конкретный — отвечаем как обычно
+        documents = [doc for doc, _ in scored_results]
+        if not documents:
+            return RAGResponse(
+                answer=(
+                    "К сожалению, я не нашёл подходящей информации в базе знаний "
+                    "по вашему вопросу. Давайте я передам ваш вопрос оператору "
+                    "техподдержки — он сможет помочь более детально."
+                ),
+                confidence=0.0,
+                confidence_reason="Нет релевантных документов в базе знаний",
+                needs_escalation=True,
+            ), None
+
+        response = await self._generate_response(question, documents, chat_history)
+        return response, None
+
+    async def ask_by_topic(
+        self,
+        original_query: str,
+        article_id: str,
+        topic_title: str,
+        chat_history: Optional[List[dict]] = None,
+    ) -> RAGResponse:
+        """
+        Генерация ответа по конкретной выбранной теме.
+
+        Используется когда пользователь выбрал тему из уточняющего списка.
+        """
+        logger.info(f"[DEMO] ASK_BY_TOPIC|article={article_id}|title={topic_title}")
+
+        documents = self.retrieve_by_article_id(article_id, original_query)
+
+        if not documents:
+            # Fallback: обычный поиск
+            documents = self.retrieve(original_query)
+
+        if not documents:
+            return RAGResponse(
+                answer=(
+                    "К сожалению, я не нашёл подходящей информации по этой теме. "
+                    "Давайте я передам ваш вопрос оператору техподдержки."
+                ),
+                confidence=0.0,
+                confidence_reason="Нет документов по выбранной теме",
+                needs_escalation=True,
+            )
+
+        return await self._generate_response(original_query, documents, chat_history)
+
+    async def _generate_response(
+        self,
+        question: str,
+        documents: List[Document],
+        chat_history: Optional[List[dict]] = None,
+    ) -> RAGResponse:
+        """
+        Внутренний метод генерации ответа через LLM.
+
+        Вынесен из ask() для переиспользования в ask_with_clarification и ask_by_topic.
+        """
+        import time as _time
+        _start = _time.time()
+
+        context_text, article_ids, youtube_links, images = self._build_context(documents)
+        logger.info(f"[DEMO] CONTEXT|articles={article_ids}|youtube={len(youtube_links)}|images={len(images)}")
+
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+        ]
+
+        if chat_history:
+            for msg in chat_history[-6:]:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"],
+                })
+
+        user_message = CONTEXT_TEMPLATE.format(
+            context=context_text,
+            question=question,
+        )
+        messages.append({"role": "user", "content": user_message})
+
+        logger.info(f"[DEMO] GPT_CALL|model={settings.openai_model}|messages={len(messages)}|temperature=0.1")
+        _gpt_start = _time.time()
+        try:
+            response = self.client.chat.completions.create(
+                model=settings.openai_model,
+                messages=messages,
+                temperature=0.1,
+                max_tokens=2000,
+            )
+            raw_answer = response.choices[0].message.content or ""
+            _gpt_elapsed = _time.time() - _gpt_start
+            _tokens_in = response.usage.prompt_tokens if response.usage else 0
+            _tokens_out = response.usage.completion_tokens if response.usage else 0
+            logger.info(f"[DEMO] GPT_DONE|time={_gpt_elapsed:.1f}s|tokens_in={_tokens_in}|tokens_out={_tokens_out}")
+        except Exception as e:
+            logger.error(f"Ошибка OpenAI API: {e}")
+            return RAGResponse(
+                answer=(
+                    "Произошла техническая ошибка. Пожалуйста, попробуйте ещё раз "
+                    "или обратитесь к оператору техподдержки."
+                ),
+                confidence=0.0,
+                confidence_reason=f"Ошибка API: {str(e)}",
+                needs_escalation=True,
+            )
+
+        clean_answer, confidence, reason = self._parse_confidence(raw_answer)
         needs_escalation = confidence < settings.rag_confidence_threshold
         _total = _time.time() - _start
 

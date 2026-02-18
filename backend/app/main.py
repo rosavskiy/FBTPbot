@@ -19,6 +19,7 @@ from app.api.operator import router as operator_router
 from app.config import settings
 from app.database.models import init_db
 from app.models.schemas import HealthResponse
+from app.rag.session_store import cleanup_expired_sessions
 
 logging.basicConfig(
     level=logging.DEBUG if settings.app_debug else logging.INFO,
@@ -56,8 +57,14 @@ async def lifespan(app: FastAPI):
         )
 
     logger.info(f"✅ Сервер готов к работе на {settings.app_host}:{settings.app_port}")
+    
+    # Запускаем фоновую очистку истёкших контекстов уточнения
+    import asyncio
+    cleanup_task = asyncio.create_task(cleanup_expired_sessions())
+    
     yield
 
+    cleanup_task.cancel()
     logger.info("Завершение работы...")
 
 

@@ -242,3 +242,42 @@
     border-radius: 12px;
   }
 }
+
+/* Clarification / Topic selection */
+.widget-clarification {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.widget-topic-btn {
+  padding: 7px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.4;
+  transition: all 0.2s;
+  color: #344054;
+}
+
+.widget-topic-btn:hover:not(:disabled) {
+  background: #e8f4f8;
+  border-color: #0673a5;
+  color: #044d6e;
+}
+
+.widget-topic-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.widget-topic-btn--other {
+  background: transparent;
+  border-style: dashed;
+  color: #667085;
+  font-size: 11px;
+}
