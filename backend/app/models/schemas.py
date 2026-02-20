@@ -61,7 +61,7 @@ class EscalationRequest(BaseModel):
 class EscalationResponse(BaseModel):
     escalation_id: str
     status: str = "pending"
-    message: str = "Ваш запрос передан оператору техподдержки. Ожидайте ответа."
+    message: str = "Запрос передан оператору."
     position_in_queue: int = 0
 
 

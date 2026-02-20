@@ -166,14 +166,11 @@ def _extract_unique_topics(
 
 def _build_clarification_message(topics: List[SuggestedTopic]) -> str:
     """Формирует текстовое сообщение с вариантами тем."""
-    lines = ["Я нашёл несколько тем, которые могут быть связаны с вашим вопросом:\n"]
+    lines = ["Уточните, какая тема вас интересует:"]
 
     for i, topic in enumerate(topics, 1):
-        lines.append(f"{i}. **{topic.title}**")
+        lines.append(f"{i}. {topic.title}")
 
-    lines.append(
-        "\nВыберите номер подходящей темы или опишите вашу проблему подробнее, "
-        "чтобы я мог дать точный ответ."
-    )
+    lines.append("\nВыберите номер или опишите проблему подробнее.")
 
     return "\n".join(lines)

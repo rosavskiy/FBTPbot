@@ -25,29 +25,27 @@ from app.indexer.knowledge_base import get_indexer, SUPPORT_COLLECTION_NAME
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = """Ты — ИИ-ассистент техподдержки компании ООО «Фармбазис» (www.farmbazis.ru).
-Компания разрабатывает программное обеспечение для аптек.
+SYSTEM_PROMPT = """Ты — ИИ-ассистент техподдержки ООО «Фармбазис» (ПО для аптек).
+
+ГЛАВНОЕ ОГРАНИЧЕНИЕ: Ответ ДОЛЖЕН быть НЕ БОЛЕЕ 450 символов (кириллица). Пиши КРАТКО, только суть и действия. Без вступлений, без "рад помочь", без повторения вопроса.
 
 ПРАВИЛА:
-1. Отвечай ТОЛЬКО на основе предоставленного контекста из базы знаний.
-2. Если в контексте нет информации для ответа на вопрос — НЕ ВЫДУМЫВАЙ. Скажи, что не нашёл ответ, и предложи связаться с оператором.
-3. Давай пошаговые, подробные инструкции.
-4. Если к инструкции есть скриншоты — упомяни, что пользователь может посмотреть скриншоты в статье.
-5. Если есть видео-инструкция на YouTube — обязательно дай ссылку.
-6. Используй вежливый, профессиональный тон.
-7. Отвечай на русском языке.
-8. Не раскрывай внутреннюю механику работы бота.
+1. Отвечай ТОЛЬКО по контексту из базы знаний.
+2. Нет информации — скажи кратко и предложи оператора.
+3. Давай пошаговые инструкции, кратко.
+4. Есть видео на YouTube — дай ссылку.
+5. Русский язык, профессиональный тон.
+6. Не раскрывай механику бота.
 
-В конце ответа ОБЯЗАТЕЛЬНО добавь JSON-блок оценки (пользователь его не увидит):
+В конце ОБЯЗАТЕЛЬНО добавь (пользователь не увидит):
 ```confidence
-{"confidence": <число от 0.0 до 1.0>, "reason": "<краткое пояснение>"}
+{"confidence": <0.0-1.0>, "reason": "<кратко>"}
 ```
-
-Где confidence:
-- 0.0-0.3 — ответ не найден, нужна эскалация
-- 0.3-0.6 — частичный ответ, может потребоваться помощь оператора
-- 0.6-1.0 — уверенный ответ на основе базы знаний
+confidence: 0.0-0.3 — нет ответа, 0.3-0.6 — частичный, 0.6-1.0 — уверенный.
 """
+
+# Лимит ответа для интеграции с Фармбазис (1024 байта UTF-8 ≈ 450 символов кириллицы)
+MAX_ANSWER_BYTES = 1024
 
 CONTEXT_TEMPLATE = """
 КОНТЕКСТ ИЗ БАЗЫ ЗНАНИЙ:
@@ -311,11 +309,7 @@ class RAGEngine:
         if not documents:
             logger.info(f"[DEMO] DECISION|confidence=0.0|escalation=True|reason=No documents found")
             return RAGResponse(
-                answer=(
-                    "К сожалению, я не нашёл подходящей информации в базе знаний "
-                    "по вашему вопросу. Давайте я передам ваш вопрос оператору "
-                    "техподдержки — он сможет помочь более детально."
-                ),
+                answer="Ответ не найден в базе знаний. Передаю вопрос оператору.",
                 confidence=0.0,
                 confidence_reason="Нет релевантных документов в базе знаний",
                 needs_escalation=True,
@@ -355,7 +349,7 @@ class RAGEngine:
                 model=settings.openai_model,
                 messages=messages,
                 temperature=0.1,  # Низкая температура для точности
-                max_tokens=2000,
+                max_tokens=800,
             )
             raw_answer = response.choices[0].message.content or ""
             _gpt_elapsed = _time.time() - _gpt_start
@@ -365,10 +359,7 @@ class RAGEngine:
         except Exception as e:
             logger.error(f"Ошибка OpenAI API: {e}")
             return RAGResponse(
-                answer=(
-                    "Произошла техническая ошибка. Пожалуйста, попробуйте ещё раз "
-                    "или обратитесь к оператору техподдержки."
-                ),
+                answer="Техническая ошибка. Попробуйте позже или обратитесь к оператору.",
                 confidence=0.0,
                 confidence_reason=f"Ошибка API: {str(e)}",
                 needs_escalation=True,
@@ -376,6 +367,9 @@ class RAGEngine:
 
         # 5. Извлекаем confidence
         clean_answer, confidence, reason = self._parse_confidence(raw_answer)
+
+        # 5.1. Обрезаем ответ до лимита 1024 байт для интеграции с Фармбазис
+        clean_answer = _truncate_to_bytes(clean_answer, MAX_ANSWER_BYTES)
 
         # 6. Определяем необходимость эскалации
         needs_escalation = confidence < settings.rag_confidence_threshold
@@ -422,11 +416,7 @@ class RAGEngine:
         documents = [doc for doc, _ in scored_results]
         if not documents:
             return RAGResponse(
-                answer=(
-                    "К сожалению, я не нашёл подходящей информации в базе знаний "
-                    "по вашему вопросу. Давайте я передам ваш вопрос оператору "
-                    "техподдержки — он сможет помочь более детально."
-                ),
+                answer="Ответ не найден в базе знаний. Передаю вопрос оператору.",
                 confidence=0.0,
                 confidence_reason="Нет релевантных документов в базе знаний",
                 needs_escalation=True,
@@ -457,10 +447,7 @@ class RAGEngine:
 
         if not documents:
             return RAGResponse(
-                answer=(
-                    "К сожалению, я не нашёл подходящей информации по этой теме. "
-                    "Давайте я передам ваш вопрос оператору техподдержки."
-                ),
+                answer="По этой теме информация не найдена. Передаю вопрос оператору.",
                 confidence=0.0,
                 confidence_reason="Нет документов по выбранной теме",
                 needs_escalation=True,
@@ -509,7 +496,7 @@ class RAGEngine:
                 model=settings.openai_model,
                 messages=messages,
                 temperature=0.1,
-                max_tokens=2000,
+                max_tokens=800,
             )
             raw_answer = response.choices[0].message.content or ""
             _gpt_elapsed = _time.time() - _gpt_start
@@ -519,16 +506,14 @@ class RAGEngine:
         except Exception as e:
             logger.error(f"Ошибка OpenAI API: {e}")
             return RAGResponse(
-                answer=(
-                    "Произошла техническая ошибка. Пожалуйста, попробуйте ещё раз "
-                    "или обратитесь к оператору техподдержки."
-                ),
+                answer="Техническая ошибка. Попробуйте позже или обратитесь к оператору.",
                 confidence=0.0,
                 confidence_reason=f"Ошибка API: {str(e)}",
                 needs_escalation=True,
             )
 
         clean_answer, confidence, reason = self._parse_confidence(raw_answer)
+        clean_answer = _truncate_to_bytes(clean_answer, MAX_ANSWER_BYTES)
         needs_escalation = confidence < settings.rag_confidence_threshold
         _total = _time.time() - _start
 
@@ -544,6 +529,22 @@ class RAGEngine:
             youtube_links=youtube_links,
             images=images,
         )
+
+
+def _truncate_to_bytes(text: str, max_bytes: int) -> str:
+    """Обрезает текст до max_bytes байт UTF-8, не ломая символы."""
+    encoded = text.encode('utf-8')
+    if len(encoded) <= max_bytes:
+        return text
+    truncated = encoded[:max_bytes]
+    # Декодируем с игнорированием неполного последнего символа
+    text = truncated.decode('utf-8', errors='ignore').rstrip()
+    # Обрезаем по последнему предложению
+    for sep in ('.\n', '.', '\n'):
+        idx = text.rfind(sep)
+        if idx > len(text) // 2:
+            return text[:idx + 1]
+    return text
 
 
 # Singleton

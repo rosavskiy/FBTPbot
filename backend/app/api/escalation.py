@@ -84,10 +84,7 @@ async def create_escalation(
     return EscalationResponse(
         escalation_id=escalation.id,
         status=escalation.status,
-        message=(
-            "Ваш запрос передан оператору техподдержки. "
-            f"Вы {position}-й в очереди. Ожидайте ответа."
-        ),
+        message=f"Запрос передан оператору. Вы {position}-й в очереди.",
         position_in_queue=position,
     )
 
