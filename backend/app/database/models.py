@@ -25,6 +25,7 @@ from sqlalchemy import (
     Text,
     create_engine,
 )
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -103,7 +104,24 @@ class Operator(Base):
 
 
 # Async engine и session
-engine = create_async_engine(settings.database_url, echo=settings.app_debug)
+engine = create_async_engine(
+    settings.database_url,
+    echo=settings.app_debug,
+    connect_args={"timeout": 30},  # Ожидание до 30 сек при блокировке
+    pool_pre_ping=True,
+)
+
+
+@event.listens_for(engine.sync_engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    """Включаем WAL-режим и busy_timeout для конкурентного доступа."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
+
+
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

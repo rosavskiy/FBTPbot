@@ -6,14 +6,22 @@ CRUD-операции для сессий, сообщений, эскалаци�
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
+RETRY_DELAY = 0.5  # секунд
 
 from app.database.models import (
     ChatMessageDB,
@@ -40,7 +48,16 @@ class DatabaseService:
             user_agent=user_agent,
         )
         self.session.add(chat_session)
-        await self.session.commit()
+        for attempt in range(MAX_RETRIES):
+            try:
+                await self.session.commit()
+                return chat_session
+            except OperationalError as e:
+                if "database is locked" in str(e) and attempt < MAX_RETRIES - 1:
+                    logger.warning("[DB] database is locked on create_session, retry %d", attempt + 1)
+                    await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+                    continue
+                raise
         return chat_session
 
     async def get_session(self, session_id: str) -> Optional[ChatSession]:
@@ -69,7 +86,16 @@ class DatabaseService:
             source_articles=json.dumps(source_articles) if source_articles else None,
         )
         self.session.add(message)
-        await self.session.commit()
+        for attempt in range(MAX_RETRIES):
+            try:
+                await self.session.commit()
+                return message
+            except OperationalError as e:
+                if "database is locked" in str(e) and attempt < MAX_RETRIES - 1:
+                    logger.warning("[DB] database is locked on add_message, retry %d", attempt + 1)
+                    await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+                    continue
+                raise
         return message
 
     async def get_chat_history(
