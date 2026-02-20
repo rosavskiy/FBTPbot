@@ -58,3 +58,6 @@ instructions/
 
 # Widget build
 frontend/dist-widget/
+transcription_analysis/usefulness_report.txt
+analyze_transcriptions.py
+transcription_analysis/usefulness_analysis.json
