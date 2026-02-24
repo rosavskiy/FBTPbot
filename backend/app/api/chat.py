@@ -12,7 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import get_db
 from app.database.service import DatabaseService
-from app.models.schemas import ChatRequest, ChatResponse, SuggestedTopicSchema
+from app.models.schemas import (
+    ChatRequest,
+    ChatResponse,
+    SuggestedTopicSchema,
+    compute_confidence_label,
+    compute_confidence_level,
+)
 from app.rag.engine import get_rag_engine
 from app.rag.session_store import (
     clear_clarification_context,
@@ -94,6 +100,8 @@ async def send_message(
             answer=rag_response.answer,
             session_id=session.id,
             confidence=rag_response.confidence,
+            confidence_level=compute_confidence_level(rag_response.confidence),
+            confidence_label=compute_confidence_label(rag_response.confidence),
             needs_escalation=rag_response.needs_escalation,
             source_articles=rag_response.source_articles,
             youtube_links=rag_response.youtube_links,
@@ -140,6 +148,8 @@ async def send_message(
             answer=answer_text,
             session_id=session.id,
             confidence=0.5,
+            confidence_level=compute_confidence_level(0.5),
+            confidence_label=compute_confidence_label(0.5),
             needs_escalation=False,
             response_type="clarification",
             suggested_topics=[
@@ -168,6 +178,8 @@ async def send_message(
         answer=rag_response.answer,
         session_id=session.id,
         confidence=rag_response.confidence,
+        confidence_level=compute_confidence_level(rag_response.confidence),
+        confidence_label=compute_confidence_label(rag_response.confidence),
         needs_escalation=rag_response.needs_escalation,
         source_articles=rag_response.source_articles,
         youtube_links=rag_response.youtube_links,

@@ -9,6 +9,41 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+# === Уровни уверенности ===
+
+class ConfidenceLevel(str, Enum):
+    """Категории уверенности ответа (4 уровня)."""
+    high = "high"              # >= 0.8 — уверенный ответ
+    acceptable = "acceptable"  # >= 0.6 — приемлемый
+    partial = "partial"        # >= 0.3 — частичный
+    escalation = "escalation"  # <  0.3 — эскалация
+
+
+CONFIDENCE_LABELS = {
+    ConfidenceLevel.high: "Уверенный ответ",
+    ConfidenceLevel.acceptable: "Приемлемый ответ",
+    ConfidenceLevel.partial: "Частичный ответ",
+    ConfidenceLevel.escalation: "Требуется эскалация",
+}
+
+
+def compute_confidence_level(confidence: float) -> ConfidenceLevel:
+    """Определяет категорию уверенности по числовому значению."""
+    if confidence >= 0.8:
+        return ConfidenceLevel.high
+    elif confidence >= 0.6:
+        return ConfidenceLevel.acceptable
+    elif confidence >= 0.3:
+        return ConfidenceLevel.partial
+    else:
+        return ConfidenceLevel.escalation
+
+
+def compute_confidence_label(confidence: float) -> str:
+    """Возвращает человекочитаемое описание уровня уверенности."""
+    return CONFIDENCE_LABELS[compute_confidence_level(confidence)]
+
+
 # === Чат ===
 
 class ChatMessage(BaseModel):
@@ -33,6 +68,14 @@ class ChatResponse(BaseModel):
     answer: str = Field(..., description="Ответ бота")
     session_id: str = Field(..., description="ID сессии")
     confidence: float = Field(..., description="Уровень уверенности (0-1)")
+    confidence_level: ConfidenceLevel = Field(
+        ...,
+        description="Категория уверенности: high (>=0.8), acceptable (>=0.6), partial (>=0.3), escalation (<0.3)",
+    )
+    confidence_label: str = Field(
+        ...,
+        description="Описание уровня уверенности на русском языке",
+    )
     needs_escalation: bool = Field(False, description="Требуется ли помощь оператора")
     source_articles: List[str] = Field(default_factory=list, description="ID статей-источников")
     youtube_links: List[str] = Field(default_factory=list, description="YouTube ссылки")

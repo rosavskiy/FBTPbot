@@ -25,6 +25,8 @@ def simple_question():
     if data["response_type"] == "answer":
         print(f"Ответ: {data['answer']}")
         print(f"Уверенность: {data['confidence']:.0%}")
+        print(f"Уровень: {data['confidence_level']}")
+        print(f"Описание: {data['confidence_label']}")
         
         if data["youtube_links"]:
             print("Видео-инструкции:")
@@ -158,6 +160,8 @@ class FarmbazisSupportClient:
                     "type": "answer",
                     "text": data["answer"],
                     "confidence": data["confidence"],
+                    "confidence_level": data.get("confidence_level", ""),
+                    "confidence_label": data.get("confidence_label", ""),
                     "youtube": data.get("youtube_links", []),
                     "sources": data.get("source_articles", []),
                     "needs_operator": data.get("needs_escalation", False)
@@ -205,7 +209,7 @@ def ui_example():
     
     if result["type"] == "answer":
         # Показываем ответ
-        print(f"\nОтвет ({result['confidence']:.0%} уверенности):")
+        print(f"\nОтвет ({result['confidence']:.0%} уверенности, {result['confidence_level']} — {result['confidence_label']}):") 
         print(result["text"])
         
         if result["youtube"]:

@@ -61,3 +61,8 @@ frontend/dist-widget/
 transcription_analysis/usefulness_report.txt
 analyze_transcriptions.py
 transcription_analysis/usefulness_analysis.json
+transcription_analysis/extraction_report.txt
+extract_qa_from_transcriptions.py
+transcription_analysis/extracted_qa_pairs.csv
+FarmbazisAIIntegration.java
+FarmbazisAIIntegration.java

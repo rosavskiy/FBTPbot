@@ -90,6 +90,10 @@ public class FarmbazisAIClient {
         response.type = data.get("response_type").getAsString();
         response.text = data.get("answer").getAsString();
         response.confidence = data.get("confidence").getAsDouble();
+        response.confidenceLevel = data.has("confidence_level") 
+            ? data.get("confidence_level").getAsString() : "";
+        response.confidenceLabel = data.has("confidence_label")
+            ? data.get("confidence_label").getAsString() : "";
         response.needsEscalation = data.get("needs_escalation").getAsBoolean();
         
         // YouTube ссылки
@@ -128,6 +132,8 @@ class BotResponse {
     public String type;           // "answer" или "clarification"
     public String text;           // текст ответа
     public double confidence;     // уверенность 0.0-1.0
+    public String confidenceLevel; // категория: "high", "acceptable", "partial", "escalation"
+    public String confidenceLabel; // описание: "Уверенный ответ", "Приемлемый ответ", ...
     public boolean needsEscalation; // нужен оператор
     public String[] youtubeLinks; // видео-инструкции
     public Topic[] topics;        // темы для уточнения (если type="clarification")
@@ -287,7 +293,7 @@ public class SupportDialog extends JDialog {
                 answer.append("\n\n⚠️ Рекомендуется обратиться к оператору техподдержки");
             }
             
-            answer.append(String.format("\n\nУверенность: %.0f%%", response.confidence * 100));
+            answer.append(String.format("\n\nУверенность: %.0f%% (%s)", response.confidence * 100, response.confidenceLabel));
             
             answerArea.setText(answer.toString());
         }
