@@ -631,13 +631,32 @@
 
         // Pagination
         const pag = document.getElementById('list-pagination');
+        const totalPages = data.total_pages;
         pag.innerHTML = `
-            <span class="text-sm text-gray-500">Стр. ${data.page} из ${data.total_pages} (всего ${data.total})</span>
-            <div class="flex gap-2">
-                <button class="btn btn-outline text-sm py-1 px-3" onclick="listPage=Math.max(1,listPage-1);loadList()" ${data.page <= 1 ? 'disabled' : ''}>← Назад</button>
-                <button class="btn btn-outline text-sm py-1 px-3" onclick="listPage++;loadList()" ${data.page >= data.total_pages ? 'disabled' : ''}>Вперёд →</button>
+            <span class="text-sm text-gray-500">Стр. ${data.page} из ${totalPages} (всего ${data.total})</span>
+            <div class="flex items-center gap-2">
+                <button class="btn btn-outline text-sm py-1 px-2" onclick="goToPage(1)" ${data.page <= 1 ? 'disabled' : ''} title="Первая страница">⏮</button>
+                <button class="btn btn-outline text-sm py-1 px-3" onclick="goToPage(listPage-1)" ${data.page <= 1 ? 'disabled' : ''}>← Назад</button>
+                <div class="flex items-center gap-1">
+                    <input type="number" id="page-input" class="text-center text-sm py-1 px-2" style="width: 60px; border: 2px solid #e2e8f0; border-radius: 6px;" 
+                           value="${data.page}" min="1" max="${totalPages}" 
+                           onkeydown="if(event.key==='Enter'){goToPage(parseInt(this.value))}"
+                           onblur="goToPage(parseInt(this.value))">
+                    <span class="text-sm text-gray-400">/ ${totalPages}</span>
+                </div>
+                <button class="btn btn-outline text-sm py-1 px-3" onclick="goToPage(listPage+1)" ${data.page >= totalPages ? 'disabled' : ''}>Вперёд →</button>
+                <button class="btn btn-outline text-sm py-1 px-2" onclick="goToPage(${totalPages})" ${data.page >= totalPages ? 'disabled' : ''} title="Последняя страница">⏭</button>
             </div>
         `;
+    }
+
+    function goToPage(page) {
+        const totalPages = parseInt(document.getElementById('page-input')?.max) || 1;
+        const newPage = Math.max(1, Math.min(totalPages, page));
+        if (newPage !== listPage && !isNaN(newPage)) {
+            listPage = newPage;
+            loadList();
+        }
     }
 
     async function openItemInQuiz(itemId) {
