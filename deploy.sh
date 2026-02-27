@@ -12,7 +12,7 @@ set -e
 
 # === НАСТРОЙКИ ===
 SERVER_USER="root"
-SERVER_HOST="192.144.59.97"
+SERVER_HOST="41.216.182.31"
 SERVER_DIR="/opt/fbtpai"
 REPO_URL="https://github.com/rosavskiy/FBTPbot.git"
 INSTRUCTIONS_LOCAL="./instructions"
