@@ -11,10 +11,12 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.chat import router as chat_router
 from app.api.escalation import router as escalation_router
+from app.api.kb_admin import router as kb_admin_router
 from app.api.operator import router as operator_router
 from app.config import settings
 from app.database.models import init_db
@@ -92,11 +94,17 @@ app.add_middleware(
 app.include_router(chat_router)
 app.include_router(escalation_router)
 app.include_router(operator_router)
+app.include_router(kb_admin_router)
 
 # Статические файлы (изображения из инструкций)
 images_dir = Path(settings.chroma_persist_dir).parent / "images"
 images_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static/images", StaticFiles(directory=str(images_dir)), name="images")
+
+# Статические файлы для админки БЗ
+static_dir = Path(__file__).resolve().parent.parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 @app.get("/api/health", response_model=HealthResponse, tags=["system"])
@@ -124,3 +132,12 @@ async def health_check():
         total_chunks=stats.get("total_chunks", 0),
         support_tickets_count=support_count,
     )
+
+
+@app.get("/kb-admin", tags=["kb-admin"])
+async def kb_admin_page():
+    """Веб-интерфейс управления базой знаний (квиз-режим)."""
+    html_path = Path(__file__).resolve().parent.parent / "static" / "kb_admin.html"
+    if not html_path.exists():
+        return {"error": "kb_admin.html не найден"}
+    return FileResponse(html_path, media_type="text/html")
