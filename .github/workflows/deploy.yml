@@ -1,0 +1,52 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # Ручной запуск
+
+env:
+  SERVER_HOST: 41.216.182.31
+  SERVER_USER: root
+  SERVER_DIR: /opt/fbtpai
+
+jobs:
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ env.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          ssh ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }} << 'ENDSSH'
+            set -e
+            cd ${{ env.SERVER_DIR }}
+            
+            echo "📥 Pulling latest code..."
+            git pull origin main
+            
+            echo "🔨 Building containers..."
+            docker compose build
+            
+            echo "🚀 Restarting services..."
+            docker compose up -d
+            
+            echo "✅ Deploy complete!"
+            docker compose ps
+          ENDSSH
+
+      - name: Health check
+        run: |
+          sleep 10
+          curl -f http://${{ env.SERVER_HOST }}:8000/health || exit 1
+          echo "✅ Backend is healthy"
