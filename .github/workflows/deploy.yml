@@ -47,6 +47,15 @@ jobs:
 
       - name: Health check
         run: |
-          sleep 10
-          curl -f http://${{ env.SERVER_HOST }}:8000/health || exit 1
-          echo "✅ Backend is healthy"
+          echo "Waiting for services to start..."
+          for i in {1..12}; do
+            if curl -sf http://${{ env.SERVER_HOST }}:8000/api/health; then
+              echo ""
+              echo "✅ Backend is healthy"
+              exit 0
+            fi
+            echo "Attempt $i/12 - waiting 5s..."
+            sleep 5
+          done
+          echo "❌ Health check failed after 60s"
+          exit 1
