@@ -1,0 +1,30 @@
+[
+  {
+    "id": "custom_001",
+    "text": "Вопрос: Ваш вопрос здесь?\n\nОтвет: Ваш ответ здесь.",
+    "metadata": {
+      "source": "manual_import",
+      "category": "Прочее",
+      "category_en": "general",
+      "tags": ["тег1", "тег2"],
+      "quality_score": 5,
+      "question": "Ваш вопрос здесь?",
+      "answer": "Ваш ответ здесь.",
+      "type": "qa_pair"
+    }
+  },
+  {
+    "id": "custom_002",
+    "text": "Вопрос: Второй вопрос?\n\nОтвет: Второй ответ.",
+    "metadata": {
+      "source": "manual_import",
+      "category": "Работа с документами",
+      "category_en": "documents",
+      "tags": ["документы", "пример"],
+      "quality_score": 4,
+      "question": "Второй вопрос?",
+      "answer": "Второй ответ.",
+      "type": "qa_pair"
+    }
+  }
+]
