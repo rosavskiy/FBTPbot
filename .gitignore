@@ -66,3 +66,12 @@ extract_qa_from_transcriptions.py
 transcription_analysis/extracted_qa_pairs.csv
 FarmbazisAIIntegration.java
 FarmbazisAIIntegration.java
+batch_reindex.py
+fix_health_stats.py
+fix_stats.py
+fix_support_kb.py
+fix_support_kb_continue.py
+run_xlsx_test.py
+server_diagnose.py
+transcription_analysis/extracted_qa_pairs.json
+update_support_kb.py
