@@ -253,7 +253,8 @@ async def list_kb_items(
         search_lower = search.lower()
         data = [
             d for d in data
-            if search_lower in d.get("metadata", {}).get("question", "").lower()
+            if search_lower in d.get("id", "").lower()
+            or search_lower in d.get("metadata", {}).get("question", "").lower()
             or search_lower in d.get("metadata", {}).get("answer", "").lower()
             or search_lower in d.get("text", "").lower()
         ]
